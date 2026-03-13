@@ -263,6 +263,36 @@ def compute_custom_spread(df_futures, df_vix, legs):
 # ═══════════════════════════════════════════════════════════════════════════
 # SIDEBAR — CONSTRUCTOR DE SPREADS
 # ═══════════════════════════════════════════════════════════════════════════
+PRESETS = {
+    "M1−M2": [{"month": 1, "weight": 1.0}, {"month": 2, "weight": -1.0}],
+    "M2−M3": [{"month": 2, "weight": 1.0}, {"month": 3, "weight": -1.0}],
+    "M3−M4": [{"month": 3, "weight": 1.0}, {"month": 4, "weight": -1.0}],
+    "M4−M5": [{"month": 4, "weight": 1.0}, {"month": 5, "weight": -1.0}],
+    "M1−M3": [{"month": 1, "weight": 1.0}, {"month": 3, "weight": -1.0}],
+    "M2−M4": [{"month": 2, "weight": 1.0}, {"month": 4, "weight": -1.0}],
+    "Fly 1-2-3": [{"month": 1, "weight": 1.0}, {"month": 2, "weight": -2.0}, {"month": 3, "weight": 1.0}],
+    "Fly 2-3-4": [{"month": 2, "weight": 1.0}, {"month": 3, "weight": -2.0}, {"month": 4, "weight": 1.0}],
+    "Personalizado": None,
+}
+
+
+def _build_formula(legs):
+    """Genera la fórmula textual a partir de las patas."""
+    parts = []
+    for leg in legs:
+        w = leg["weight"]
+        m = f"M{leg['month']}"
+        if w == 1:
+            parts.append(f"+{m}")
+        elif w == -1:
+            parts.append(f"−{m}")
+        elif w > 0:
+            parts.append(f"+{w}{m}")
+        else:
+            parts.append(f"{w}{m}")
+    return " ".join(parts).lstrip("+").strip()
+
+
 def render_sidebar():
     """Renderiza el panel lateral con el constructor de spreads."""
 
@@ -278,95 +308,66 @@ def render_sidebar():
 
     st.sidebar.markdown("---")
 
-    # ── Presets rápidos ──
-    st.sidebar.markdown("##### ⚡ Presets rápidos")
-    preset_col1, preset_col2 = st.sidebar.columns(2)
+    # ── Preset selector (selectbox en vez de botones) ──
+    st.sidebar.markdown("##### ⚡ Seleccionar spread")
 
-    presets = {
-        "M1−M2": [{"month": 1, "weight": 1.0}, {"month": 2, "weight": -1.0}],
-        "M2−M3": [{"month": 2, "weight": 1.0}, {"month": 3, "weight": -1.0}],
-        "M1−M3": [{"month": 1, "weight": 1.0}, {"month": 3, "weight": -1.0}],
-        "M4−M5": [{"month": 4, "weight": 1.0}, {"month": 5, "weight": -1.0}],
-        "Fly 1-2-3": [{"month": 1, "weight": 1.0}, {"month": 2, "weight": -2.0}, {"month": 3, "weight": 1.0}],
-        "Fly 2-3-4": [{"month": 2, "weight": 1.0}, {"month": 3, "weight": -2.0}, {"month": 4, "weight": 1.0}],
-    }
-
-    for i, (name, legs) in enumerate(presets.items()):
-        col = preset_col1 if i % 2 == 0 else preset_col2
-        if col.button(name, key=f"preset_{name}", use_container_width=True):
-            st.session_state["custom_legs"] = legs
-            st.session_state["n_legs"] = len(legs)
-
-    st.sidebar.markdown("---")
-
-    # ── Constructor personalizado ──
-    st.sidebar.markdown("##### 🔧 Constructor personalizado")
-
-    n_legs = st.sidebar.radio(
-        "Número de patas",
-        [2, 3],
-        index=0 if st.session_state.get("n_legs", 2) == 2 else 1,
-        horizontal=True,
-        key="n_legs_radio",
+    preset_names = list(PRESETS.keys())
+    selected_preset = st.sidebar.selectbox(
+        "Preset",
+        options=preset_names,
+        index=0,
+        key="selected_preset",
+        label_visibility="collapsed",
     )
 
-    # Inicializar patas por defecto
-    if "custom_legs" not in st.session_state:
-        st.session_state["custom_legs"] = [
-            {"month": 1, "weight": 1.0},
-            {"month": 2, "weight": -1.0},
-        ]
+    is_custom = selected_preset == "Personalizado"
 
-    legs = st.session_state["custom_legs"]
+    # Determinar las patas según el preset o el modo personalizado
+    if not is_custom:
+        legs = PRESETS[selected_preset]
+        n_legs = len(legs)
+    else:
+        # ── Constructor personalizado ──
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("##### 🔧 Constructor personalizado")
 
-    # Ajustar número de patas
-    while len(legs) < n_legs:
-        legs.append({"month": len(legs) + 1, "weight": 1.0})
-    while len(legs) > n_legs:
-        legs.pop()
-
-    new_legs = []
-    for i in range(n_legs):
-        st.sidebar.markdown(f"**Pata {i + 1}**")
-        col_m, col_w = st.sidebar.columns([1, 1])
-
-        default_month = legs[i]["month"] if i < len(legs) else i + 1
-        default_weight = legs[i]["weight"] if i < len(legs) else (1.0 if i != 1 else -1.0)
-
-        month = col_m.selectbox(
-            "Contrato",
-            options=list(range(1, 9)),
-            format_func=lambda x: f"M{x}",
-            index=min(default_month - 1, 7),
-            key=f"leg_month_{i}",
+        n_legs = st.sidebar.radio(
+            "Número de patas",
+            [2, 3],
+            index=0,
+            horizontal=True,
+            key="n_legs_radio",
         )
-        weight = col_w.number_input(
-            "Peso",
-            value=float(default_weight),
-            step=0.5,
-            min_value=-5.0,
-            max_value=5.0,
-            key=f"leg_weight_{i}",
-        )
-        new_legs.append({"month": month, "weight": weight})
 
-    st.session_state["custom_legs"] = new_legs
+        legs = []
+        for i in range(n_legs):
+            st.sidebar.markdown(f"**Pata {i + 1}**")
+            col_m, col_w = st.sidebar.columns([1, 1])
+
+            default_month = i + 1
+            default_weight = 1.0 if i != 1 else -1.0
+            if n_legs == 3 and i == 1:
+                default_weight = -2.0
+
+            month = col_m.selectbox(
+                "Contrato",
+                options=list(range(1, 9)),
+                format_func=lambda x: f"M{x}",
+                index=min(default_month - 1, 7),
+                key=f"leg_month_{i}",
+            )
+            weight = col_w.number_input(
+                "Peso",
+                value=float(default_weight),
+                step=0.5,
+                min_value=-5.0,
+                max_value=5.0,
+                key=f"leg_weight_{i}",
+            )
+            legs.append({"month": month, "weight": weight})
 
     # Mostrar fórmula
-    formula_parts = []
-    for leg in new_legs:
-        w = leg["weight"]
-        m = f"M{leg['month']}"
-        if w == 1:
-            formula_parts.append(f"+{m}")
-        elif w == -1:
-            formula_parts.append(f"−{m}")
-        elif w > 0:
-            formula_parts.append(f"+{w}{m}")
-        else:
-            formula_parts.append(f"{w}{m}")
-
-    formula = " ".join(formula_parts).lstrip("+").strip()
+    formula = _build_formula(legs)
     st.sidebar.markdown(f"""
     <div style='background:#1e293b; border:1px solid #334155; border-radius:8px;
                 padding:10px 14px; text-align:center; margin:12px 0;'>
@@ -396,7 +397,7 @@ def render_sidebar():
         key="stacked_window",
     )
 
-    return new_legs, formula, year_from, stacked_window
+    return legs, formula, year_from, stacked_window
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -666,17 +667,35 @@ def main():
 
     elif json_loaded and json_data:
         # Construir spread desde datos JSON precalculados
-        # Mapear legs a nombre de spread en JSON
         st.sidebar.info("📁 Datos JSON cargados")
 
-        # Intentar mapeo directo
-        key = f"M{legs[0]['month']}_M{legs[-1]['month']}"
-        if key in json_data:
-            spread_df = json_data[key]
+        # Mapear legs a posibles keys del JSON
+        # El notebook exporta con formato M1_M2, M2_M3, etc.
+        possible_keys = [
+            f"M{legs[0]['month']}_M{legs[-1]['month']}",
+            f"M{legs[0]['month']}_M{legs[1]['month']}" if len(legs) >= 2 else None,
+        ]
+        # También probar sin el prefijo M
+        key_found = None
+        for k in possible_keys:
+            if k and k in json_data:
+                key_found = k
+                break
+
+        if key_found:
+            spread_df = json_data[key_found]
             if year_from:
                 spread_df = spread_df[spread_df["year"] >= year_from]
         else:
-            st.sidebar.warning(f"Spread {formula} no precalculado en JSON. Sube el .db para spreads personalizados.")
+            available = ", ".join(json_data.keys())
+            st.sidebar.warning(f"Spread {formula} no disponible en JSON.")
+            st.sidebar.caption(f"Disponibles: {available}")
+            # Cargar el primero como fallback
+            first_key = list(json_data.keys())[0]
+            spread_df = json_data[first_key]
+            if year_from:
+                spread_df = spread_df[spread_df["year"] >= year_from]
+            formula = first_key.replace("_", "−")
     else:
         st.warning("⚠️ No se encontraron datos. Coloca `vix_analytics.db` o `vix_spreads_data.json` en el directorio de la app.")
         st.info("""
