@@ -500,9 +500,9 @@ def chart_histogram(df, formula):
             (similar["vix"].between(latest["vix"] - 5, latest["vix"] + 5))
         ]
     if latest.get("dte") is not None and pd.notna(latest["dte"]):
-        similar = similar[
-            (similar["dte_front"].notna() if "dte_front" in similar.columns else True)
-        ]
+        dte_col = "dte_front" if "dte_front" in similar.columns else "dte" if "dte" in similar.columns else None
+        if dte_col is not None:
+            similar = similar[similar[dte_col].notna()]
 
     spreads = similar["spread"].dropna()
     if len(spreads) < 20:
